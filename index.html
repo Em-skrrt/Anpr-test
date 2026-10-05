@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>ANPR Test</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f2f2f2;
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 600px;
+    margin: auto;
+    background: white;
+    padding: 20px;
+    border-radius: 15px;
+}
+
+h1 {
+    margin-top: 0;
+}
+
+input {
+    width: 100%;
+    margin: 15px 0;
+}
+
+img {
+    max-width: 100%;
+    display: none;
+    border-radius: 10px;
+}
+
+button {
+    width: 100%;
+    padding: 15px;
+    margin-top: 10px;
+    border: none;
+    border-radius: 10px;
+    background: #111;
+    color: white;
+    font-size: 16px;
+}
+
+button:disabled {
+    opacity: 0.5;
+}
+
+.result {
+    margin-top: 20px;
+    padding: 20px;
+    background: #eee;
+    border-radius: 10px;
+}
+
+.plate {
+    font-size: 30px;
+    font-weight: bold;
+    letter-spacing: 4px;
+}
+
+#status {
+    margin-top: 15px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>🚗 ANPR Test</h1>
+
+<p>
+Ladda upp en bild på en registreringsskylt.
+</p>
+
+<input
+    type="file"
+    id="imageInput"
+    accept="image/*"
+>
+
+<img id="preview">
+
+<button id="readButton" disabled>
+    🔎 Läs registreringsskylt
+</button>
+
+<button id="demoButton">
+    🧪 Testläge
+</button>
+
+<div id="status">
+    Väntar på bild...
+</div>
+
+<div class="result">
+
+    <p>Registreringsnummer:</p>
+
+    <div class="plate" id="plate">
+        ---
+    </div>
+
+    <p>OCR-säkerhet:</p>
+
+    <div id="confidence">
+        ---
+    </div>
+
+    <p>OCR-text:</p>
+
+    <div id="raw">
+        ---
+    </div>
+
+</div>
+
+</div>
+
+<script>
+
+const imageInput =
+    document.getElementById("imageInput");
+
+const preview =
+    document.getElementById("preview");
+
+const readButton =
+    document.getElementById("readButton");
+
+const demoButton =
+    document.getElementById("demoButton");
+
+const status =
+    document.getElementById("status");
+
+const plate =
+    document.getElementById("plate");
+
+const confidence =
+    document.getElementById("confidence");
+
+const raw =
+    document.getElementById("raw");
+
+
+let selectedImage = null;
+
+
+imageInput.addEventListener("change", function(event) {
+
+    const file = event.target.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    selectedImage = file;
+
+    preview.src = URL.createObjectURL(file);
+
+    preview.style.display = "block";
+
+    readButton.disabled = false;
+
+    status.textContent =
+        "Bild vald. Tryck på Läs registreringsskylt.";
+
+});
+
+
+readButton.addEventListener("click", async function() {
+
+    if (!selectedImage) {
+        return;
+    }
+
+    readButton.disabled = true;
+
+    status.textContent =
+        "Startar OCR...";
+
+    plate.textContent = "---";
+
+    confidence.textContent = "---";
+
+    raw.textContent = "---";
+
+
+    try {
+
+        const result =
+            await Tesseract.recognize(
+                selectedImage,
+                "eng",
+                {
+
+                    logger: function(info) {
+
+                        if (
+                            info.status ===
+                            "recognizing text"
+                        ) {
+
+                            const percent =
+                                Math.round(
+                                    info.progress * 100
+                                );
+
+                            status.textContent =
+                                "Läser bild... "
+                                + percent
+                                + "%";
+                        }
+
+                    }
+
+                }
+            );
+
+
+        const text =
+            result.data.text || "";
+
+
+        raw.textContent =
+            text.trim() || "(inget resultat)";
+
+
+        confidence.textContent =
+            Math.round(
+                result.data.confidence || 0
+            ) + "%";
+
+
+        const registration =
+            findRegistration(text);
+
+
+        if (registration) {
+
+            plate.textContent =
+                registration;
+
+            status.textContent =
+                "Registreringsnummer hittat.";
+
+        } else {
+
+            plate.textContent =
+                "Ej hittat";
+
+            status.textContent =
+                "Ingen tydlig registreringsskylt hittades.";
+
+        }
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        status.textContent =
+            "Ett fel uppstod.";
+
+    }
+
+
+    readButton.disabled = false;
+
+});
+
+
+demoButton.addEventListener("click", function() {
+
+    plate.textContent =
+        "ABC123";
+
+    confidence.textContent =
+        "99%";
+
+    raw.textContent =
+        "ABC123";
+
+    status.textContent =
+        "🧪 TESTLÄGE – detta är påhittad testdata.";
+
+});
+
+
+function findRegistration(text) {
+
+    const cleaned =
+        text
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "");
+
+
+    // Exempel: ABC123
+
+    let match =
+        cleaned.match(
+            /[A-Z]{3}[0-9]{3}/
+        );
+
+
+    if (match) {
+        return match[0];
+    }
+
+
+    // Exempel: ABC12A
+
+    match =
+        cleaned.match(
+            /[A-Z]{3}[0-9]{2}[A-Z]/
+        );
+
+
+    if (match) {
+        return match[0];
+    }
+
+
+    return null;
+
+}
+
+</script>
+
+</body>
+</html>
